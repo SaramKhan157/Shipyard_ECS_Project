@@ -1,0 +1,27 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
+*.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+# Note: .terraform.lock.hcl IS committed (pins provider versions)
+
+# Secrets / env
+.env
+.env.*
+*.pem
+*.key
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+*.tar

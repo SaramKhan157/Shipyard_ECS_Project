@@ -1,0 +1,66 @@
+name: Build & Push
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "app/**"
+      - "Dockerfile"
+      - ".dockerignore"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-north-1
+
+jobs:
+  build-push:
+    name: Build and push to ECR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag and push image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          # also tag as latest on main
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+                       $ECR_REGISTRY/$ECR_REPOSITORY:latest
+            docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          fi
+
+      - name: Output image URI
+        run: |
+          echo "### Image pushed" >> $GITHUB_STEP_SUMMARY
+          echo "\`${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Force ECS redeploy
+        if: github.ref == 'refs/heads/main'
+        run: |
+          aws ecs update-service \
+            --cluster shipyard \
+            --service shipyard \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }} \
+            --query 'service.serviceName' \
+            --output text

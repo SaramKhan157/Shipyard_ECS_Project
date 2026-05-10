@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars and fill in your own values.
+# terraform.tfvars is gitignored.
+
+domain_name   = "your-domain.com"
+app_subdomain = "shipyard"
+image_tag     = "latest"

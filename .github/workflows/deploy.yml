@@ -1,0 +1,80 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-north-1
+  TF_VERSION: "1.8.0"
+
+jobs:
+  terraform:
+    name: Terraform apply
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: infra
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        run: terraform plan -out=tfplan -var="domain_name=${{ secrets.DOMAIN_NAME }}"
+
+      - name: Terraform apply
+        run: terraform apply tfplan
+
+      - name: Output app URL
+        run: |
+          echo "### Deployed" >> $GITHUB_STEP_SUMMARY
+          terraform output -raw app_url >> $GITHUB_STEP_SUMMARY
+
+  health-check:
+    name: Post-deploy health check
+    needs: terraform
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Wait for ECS to stabilise
+        run: sleep 30
+
+      - name: Health check
+        run: |
+          URL="https://${{ secrets.APP_SUBDOMAIN }}.${{ secrets.DOMAIN_NAME }}/health"
+          echo "Checking $URL"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+          if [ "$STATUS" != "200" ]; then
+            echo "Health check failed — got HTTP $STATUS"
+            exit 1
+          fi
+          echo "Health check passed (HTTP $STATUS)"

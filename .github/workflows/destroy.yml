@@ -1,0 +1,88 @@
+name: Destroy
+
+# Manual-trigger only. Requires typing "destroy" to confirm.
+# Never runs on push to prevent accidents.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" exactly to confirm tearing down all infrastructure'
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-north-1
+  TF_VERSION: "1.10.0" # >= 1.10 required for S3 native locking (use_lockfile)
+
+jobs:
+  guard:
+    name: Confirmation guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "destroy" ]; then
+            echo "::error::Confirmation failed. You must type 'destroy' exactly to proceed."
+            exit 1
+          fi
+          echo "Confirmation accepted. Proceeding with infrastructure teardown."
+
+  destroy:
+    name: Terraform destroy
+    needs: guard
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: infra
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Empty ECR repo (so destroy can remove the repository)
+        run: |
+          if aws ecr describe-repositories --repository-name shipyard --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            IMAGES=$(aws ecr list-images --repository-name shipyard --region ${{ env.AWS_REGION }} --query 'imageIds[*]' --output json)
+            if [ "$IMAGES" != "[]" ]; then
+              aws ecr batch-delete-image \
+                --repository-name shipyard \
+                --region ${{ env.AWS_REGION }} \
+                --image-ids "$IMAGES"
+            else
+              echo "ECR repo is already empty."
+            fi
+          else
+            echo "ECR repo does not exist - skipping."
+          fi
+
+      - name: Terraform destroy
+        run: terraform destroy -auto-approve -var="domain_name=${{ secrets.DOMAIN_NAME }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Destroy outcome: ${{ job.status }}"
+            echo ""
+            echo "Triggered by: ${{ github.actor }}"
+            echo "Branch: ${{ github.ref_name }}"
+          } >> $GITHUB_STEP_SUMMARY

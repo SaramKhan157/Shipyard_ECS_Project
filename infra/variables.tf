@@ -1,5 +1,6 @@
 variable "aws_region" {
   description = "AWS region for all resources"
+  type        = string
   default     = "eu-north-1"
 }
 
@@ -10,11 +11,13 @@ variable "domain_name" {
 
 variable "app_subdomain" {
   description = "Subdomain prefix for the app, e.g. 'shipyard' → shipyard.example.com"
+  type        = string
   default     = "shipyard"
 }
 
 variable "image_tag" {
   description = "ECR image tag to deploy"
+  type        = string
   default     = "latest"
 }
 

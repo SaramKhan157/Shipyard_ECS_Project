@@ -40,7 +40,12 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          docker build \
+            --build-arg COMMIT_SHA="${IMAGE_TAG:0:7}" \
+            --build-arg BUILD_VERSION="${IMAGE_TAG}" \
+            --build-arg BUILD_TIME="${BUILD_TIME}" \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           # also tag as latest on main
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then

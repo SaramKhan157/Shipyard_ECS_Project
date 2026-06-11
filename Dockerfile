@@ -10,8 +10,19 @@ RUN go mod download
 
 COPY app/ .
 
+# Build-time metadata (override at `docker build` with --build-arg)
+ARG COMMIT_SHA=dev
+ARG BUILD_VERSION=dev
+ARG BUILD_TIME
+
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -ldflags="-s -w" -trimpath -o shipyard .
+    BUILD_TIME=${BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)} && \
+    go build -trimpath \
+      -ldflags="-s -w \
+        -X 'main.BuildCommit=${COMMIT_SHA}' \
+        -X 'main.BuildTime=${BUILD_TIME}' \
+        -X 'main.BuildVersion=${BUILD_VERSION}'" \
+      -o shipyard .
 
 # ── Runtime stage — scratch keeps the image to ~6 MB ──────────────────────────
 FROM scratch

@@ -1,0 +1,95 @@
+name: Plan
+
+# Runs validation, linting, and a Terraform plan on PRs to main
+# and on pushes to any branch other than main.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/plan.yml"
+  push:
+    branches-ignore: [main]
+    paths:
+      - "infra/**"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  AWS_REGION: eu-north-1
+  TF_VERSION: "1.10.0" # >= 1.10 required for S3 native locking (use_lockfile)
+
+jobs:
+  plan:
+    name: fmt / validate / tflint / plan
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: infra
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Setup tflint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: Terraform fmt check
+        id: fmt
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Terraform validate
+        id: validate
+        run: terraform validate -no-color
+
+      - name: tflint
+        id: tflint
+        working-directory: infra
+        run: |
+          tflint --init
+          tflint --recursive --format compact
+        continue-on-error: true
+
+      - name: Terraform plan
+        id: plan
+        run: terraform plan -no-color -var="domain_name=${{ secrets.DOMAIN_NAME }}"
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Terraform Plan Summary"
+            echo ""
+            echo "| Step | Result |"
+            echo "|------|--------|"
+            echo "| fmt | ${{ steps.fmt.outcome }} |"
+            echo "| validate | ${{ steps.validate.outcome }} |"
+            echo "| tflint | ${{ steps.tflint.outcome }} |"
+            echo "| plan | ${{ steps.plan.outcome }} |"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if required step failed
+        if: steps.fmt.outcome == 'failure' || steps.validate.outcome == 'failure' || steps.plan.outcome == 'failure'
+        run: exit 1

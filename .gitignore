@@ -25,3 +25,8 @@ override.tf.json
 
 # Docker
 *.tar
+tfplan
+infra/tfplan
+
+
+

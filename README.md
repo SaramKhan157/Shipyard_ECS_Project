@@ -111,6 +111,11 @@ graph TB
 
 The AWS card on `/` pulls live data from the ECS Task Metadata Endpoint v4 (`ECS_CONTAINER_METADATA_URI_V4`), so the displayed region / AZ / task ID belong to the *actual* Fargate task serving the request. Run the same image locally and the card gracefully says "not running on ECS."
 
+`GET /health` and `GET /api/info` use content negotiation — `curl` (and the ALB target-group probe) get the canonical JSON, while a browser opening the same URL is served a styled page. `/health` renders an "All systems go" status card with live vitals and an inline ECG line; `/api/info` renders a Runtime Snapshot diagnostic with stat tiles and grouped detail cards for the cloud environment, build, and system.
+
+![/health — All systems go status card with live vitals](docs/screenshots/24-health-page.png)
+![/api/info — Runtime Snapshot with stat tiles and detail cards](docs/screenshots/25-info-page.png)
+
 ---
 
 ## Step 1 — Run the app locally
